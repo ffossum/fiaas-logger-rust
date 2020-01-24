@@ -115,14 +115,14 @@ pub fn init_env(finn_app: &'static str) {
         _ => panic!("RUST_LOG must be one of error, warn, info, debug and trace"),
     };
 
-    let env = match std::env::var("FIAAS_ENV")
-        .expect("FIAAS_ENV must be set")
+    let env = match std::env::var("FIAAS_ENVIRONMENT")
+        .expect("FIAAS_ENVIRONMENT must be set")
         .as_ref()
     {
         "local" => FiaasEnv::Local,
         "dev" => FiaasEnv::Dev,
         "prod" => FiaasEnv::Prod,
-        _ => panic!("FIAAS_ENV must be one of local, dev and prod"),
+        _ => panic!("FIAAS_ENVIRONMENT must be one of local, dev and prod"),
     };
 
     init(finn_app, env, level);
