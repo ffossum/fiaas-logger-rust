@@ -1,5 +1,6 @@
 use humantime;
 use log::*;
+use serde_json::json;
 use std::thread;
 use std::time::SystemTime;
 
@@ -43,26 +44,37 @@ impl Log for FiaasLogger {
                         message = record.args(),
                     ),
                 },
-                FiaasEnv::Dev | FiaasEnv::Prod => match record.level() {
-                    Level::Error => eprintln!(
-                        r#"{{"@version":1,"@timestamp":"{timestamp}","logger"="{logger}","thread":"{thread:?}","level"="{level}","message"="{message}","finn_app"="{finn_app}"}}"#,
-                        timestamp = timestamp,
-                        logger = record.target(),
-                        thread = thread::current().id(),
-                        level = record.level(),
-                        message = record.args(),
-                        finn_app = self.finn_app,
-                    ),
-                    _ => println!(
-                        r#"{{"@version":1,"@timestamp":"{timestamp}","logger"="{logger}","thread":"{thread:?}","level"="{level}","message"="{message}","finn_app"="{finn_app}"}}"#,
-                        timestamp = timestamp,
-                        logger = record.target(),
-                        thread = thread::current().id(),
-                        level = record.level(),
-                        message = record.args(),
-                        finn_app = self.finn_app,
-                    ),
-                },
+                FiaasEnv::Dev | FiaasEnv::Prod => {
+                    let t = thread::current();
+                    match record.level() {
+                        Level::Error => eprintln!(
+                            "{}",
+                            serde_json::to_string(&json!({
+                              "@version":1,
+                              "@timestamp": timestamp.to_string(),
+                              "logger": record.target(),
+                              "thread": format!("{}-{:?}", t.name().unwrap_or("unnamed"), t.id()),
+                              "level": record.level().to_string(),
+                              "message": record.args(),
+                              "finn_app": self.finn_app
+                            }))
+                            .unwrap()
+                        ),
+                        _ => println!(
+                            "{}",
+                            serde_json::to_string(&json!({
+                              "@version":1,
+                              "@timestamp": timestamp.to_string(),
+                              "logger": record.target(),
+                              "thread": format!("{}-{:?}", t.name().unwrap_or("unnamed"), t.id()),
+                              "level": record.level().to_string(),
+                              "message": record.args(),
+                              "finn_app": self.finn_app
+                            }))
+                            .unwrap()
+                        ),
+                    }
+                }
             }
         }
     }
