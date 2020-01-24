@@ -1,9 +1,11 @@
 [package]
 name = "fiaas-logger"
 version = "0.1.0"
-authors = ["Fredrik Fossum <fredrik.fossum@finn.no>"]
+authors = ["Fredrik Fossum <fredrik.fossum@gmail.com>"]
 edition = "2018"
-publish = false
+license = "MIT"
+repository = "https://github.com/ffossum/fiaas-logger-rust"
+description = "`log` implementation for FIAAS applications"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
