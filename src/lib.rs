@@ -1,4 +1,4 @@
-use humantime;
+use humantime::{self, Rfc3339Timestamp};
 use log::*;
 use serde_json::json;
 use std::thread;
@@ -18,6 +18,30 @@ struct FiaasLogger {
     level: log::Level,
 }
 
+fn format_log_local(timestamp: &Rfc3339Timestamp, record: &Record) -> String {
+    format!(
+        "[{timestamp} {level} {logger}] {message}",
+        timestamp = &timestamp,
+        logger = record.target(),
+        level = record.level(),
+        message = record.args(),
+    )
+}
+
+fn format_log_fiaas(timestamp: &Rfc3339Timestamp, record: &Record, finn_app: &str) -> String {
+    let t = thread::current();
+    serde_json::to_string(&json!({
+      "@version":1,
+      "@timestamp": &timestamp.to_string(),
+      "logger": record.target(),
+      "thread": format!("{}-{:?}", &t.name().unwrap_or("unnamed"), &t.id()),
+      "level": record.level().to_string(),
+      "message": record.args(),
+      "finn_app": finn_app,
+    }))
+    .unwrap()
+}
+
 impl Log for FiaasLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= self.level
@@ -26,53 +50,19 @@ impl Log for FiaasLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let timestamp = humantime::format_rfc3339_millis(SystemTime::now());
-
             match self.env {
-                FiaasEnv::Local => match record.level() {
-                    Level::Error => eprintln!(
-                        "[{timestamp} {level} {logger}] {message}",
-                        timestamp = timestamp,
-                        logger = record.target(),
-                        level = record.level(),
-                        message = record.args(),
-                    ),
-                    _ => println!(
-                        "[{timestamp} {level} {logger}] {message}",
-                        timestamp = timestamp,
-                        logger = record.target(),
-                        level = record.level(),
-                        message = record.args(),
-                    ),
-                },
-                FiaasEnv::Dev | FiaasEnv::Prod => {
-                    let t = thread::current();
+                FiaasEnv::Local => {
+                    let message = format_log_local(&timestamp, record);
                     match record.level() {
-                        Level::Error => eprintln!(
-                            "{}",
-                            serde_json::to_string(&json!({
-                              "@version":1,
-                              "@timestamp": timestamp.to_string(),
-                              "logger": record.target(),
-                              "thread": format!("{}-{:?}", t.name().unwrap_or("unnamed"), t.id()),
-                              "level": record.level().to_string(),
-                              "message": record.args(),
-                              "finn_app": self.finn_app
-                            }))
-                            .unwrap()
-                        ),
-                        _ => println!(
-                            "{}",
-                            serde_json::to_string(&json!({
-                              "@version":1,
-                              "@timestamp": timestamp.to_string(),
-                              "logger": record.target(),
-                              "thread": format!("{}-{:?}", t.name().unwrap_or("unnamed"), t.id()),
-                              "level": record.level().to_string(),
-                              "message": record.args(),
-                              "finn_app": self.finn_app
-                            }))
-                            .unwrap()
-                        ),
+                        Level::Error => eprintln!("{}", &message),
+                        _ => println!("{}", &message),
+                    }
+                }
+                FiaasEnv::Dev | FiaasEnv::Prod => {
+                    let message = format_log_fiaas(&timestamp, record, &self.finn_app);
+                    match record.level() {
+                        Level::Error => eprintln!("{}", &message),
+                        _ => println!("{}", &message),
                     }
                 }
             }
@@ -126,4 +116,54 @@ pub fn init_env(finn_app: &'static str) {
     };
 
     init(finn_app, env, level);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn init_env_works() {
+        std::env::set_var("FIAAS_ENVIRONMENT", "local");
+        std::env::set_var("RUST_LOG", "warn");
+        init_env("test");
+    }
+
+    #[test]
+    fn log_format_local_is_correct() {
+        let timestamp = humantime::format_rfc3339_millis(SystemTime::now());
+        let record = Record::builder()
+            .args(format_args!("Error!"))
+            .level(Level::Error)
+            .target("test")
+            .build();
+        let produced_log = format_log_local(&timestamp, &record);
+        let sample_log = format!("[{} ERROR test] Error!", timestamp);
+        assert_eq!(sample_log, produced_log);
+    }
+
+    #[test]
+    fn log_format_fiaas_is_correct() {
+        let timestamp = humantime::format_rfc3339_millis(SystemTime::now());
+        let record = Record::builder()
+            .args(format_args!("Error!"))
+            .level(Level::Error)
+            .target("test")
+            .build();
+        let produced_log = format_log_fiaas(&timestamp, &record, "test");
+        let sample_log = format!(
+            "{{\
+                \"@timestamp\":\"{}\",\
+                \"@version\":1,\
+                \"finn_app\":\"test\",\
+                \"level\":\"ERROR\",\
+                \"logger\":\"test\",\
+                \"message\":\"Error!\",\
+                \"thread\":\"tests::log_format_fiaas_is_correct-{:?}\"\
+            }}",
+            &timestamp,
+            &thread::current().id()
+        );
+        assert_eq!(sample_log, produced_log);
+    }
 }
